@@ -24,9 +24,9 @@ struct MainTabView: View {
                     Label("Reportes", systemImage: "chart.bar.xaxis")
                 }
             
-            ProfileView()
+            CattleLocationView()
                 .tabItem {
-                    Label("Perfil", systemImage: "person.crop.circle")
+                    Label("Ubicación", systemImage: "map.fill")
                 }
         }
         .tint(.green)

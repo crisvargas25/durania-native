@@ -1,10 +1,3 @@
-//
-//  durania_appApp.swift
-//  durania-app
-//
-//  Created by Cristian Vargas on 19/02/26.
-//
-
 import SwiftUI
 import SwiftData
 
@@ -14,10 +7,16 @@ struct durania_appApp: App {
         let schema = Schema([
             Item.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let modelConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false
+        )
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            return try ModelContainer(
+                for: schema,
+                configurations: [modelConfiguration]
+            )
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
@@ -25,7 +24,7 @@ struct durania_appApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainTabView()   // 👈 AQUÍ ESTÁ LA CLAVE
         }
         .modelContainer(sharedModelContainer)
     }

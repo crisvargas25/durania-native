@@ -2,6 +2,9 @@ import SwiftUI
 
 struct CattleListView: View {
     
+    @State private var searchText = ""
+    @State private var showAddModal = false
+    
     let cattleList: [Cattle] = [
         Cattle(tag: "MX-20394", age: "2 años", status: "Sano"),
         Cattle(tag: "MX-20395", age: "1.5 años", status: "Observación"),
@@ -9,45 +12,99 @@ struct CattleListView: View {
         Cattle(tag: "MX-20397", age: "1 año", status: "Sano")
     ]
     
-    var body: some View {
-        NavigationStack {
-            List(cattleList) { cow in
-                
-                let bovine = mapToBovine(cow)
-                
-                NavigationLink {
-                    BovineDetailView(
-                        bovine: bovine,
-                        vaccines: sampleVaccines,
-                        events: sampleEvents
-                    )
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(cow.tag)
-                                .font(.headline)
-                            
-                            Text(cow.age)
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                        
-                        Spacer()
-                        
-                        Text(cow.status)
-                            .font(.caption)
-                            .padding(6)
-                            .background(statusColor(cow.status))
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                    }
-                }
-            }
-            .navigationTitle("Bovinos")
+    var filteredCattle: [Cattle] {
+        if searchText.isEmpty { return cattleList }
+        return cattleList.filter {
+            $0.tag.localizedCaseInsensitiveContains(searchText)
         }
     }
     
-    // MARK: - Mapping
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 14) {
+                    ForEach(filteredCattle) { cow in
+                        
+                        let bovine = mapToBovine(cow)
+                        
+                        NavigationLink {
+                            BovineDetailView(
+                                bovine: bovine,
+                                vaccines: sampleVaccines,
+                                events: sampleEvents
+                            )
+                        } label: {
+                            cattleCard(cow)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding()
+            }
+            .background(Color.white)
+            .navigationTitle("Ganado")
+            .searchable(text: $searchText, prompt: "Buscar arete")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showAddModal.toggle()
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundColor(AppColors.tealGreen)
+                            .font(.title2)
+                    }
+                }
+            }
+            .sheet(isPresented: $showAddModal) {
+                AddCattleView()
+            }
+        }
+    }
+    
+    // MARK: - Card
+    
+    func cattleCard(_ cow: Cattle) -> some View {
+        HStack(spacing: 14) {
+            
+            Circle()
+                .fill(statusColor(cow.status))
+                .frame(width: 12, height: 12)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(cow.tag)
+                    .font(.headline)
+                    .foregroundColor(AppColors.forestGreen)
+                
+                Text("Edad: \(cow.age)")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            Spacer()
+            
+            Text(cow.status)
+                .font(.caption.bold())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(statusColor(cow.status).opacity(0.15))
+                .foregroundColor(statusColor(cow.status))
+                .cornerRadius(12)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(18)
+    }
+    
+    // MARK: - Helpers
+    
+    func statusColor(_ status: String) -> Color {
+        switch status {
+        case "Sano": return AppColors.tealGreen
+        case "Observación": return .orange
+        case "Cuarentena": return .red
+        default: return .gray
+        }
+    }
     
     func mapToBovine(_ cow: Cattle) -> Bovine {
         Bovine(
@@ -103,17 +160,6 @@ struct CattleListView: View {
             date: Date().addingTimeInterval(-86400 * 60)
         )
     ]
-    
-    // MARK: - Helpers
-    
-    func statusColor(_ status: String) -> Color {
-        switch status {
-        case "Sano": return .green
-        case "Observación": return .orange
-        case "Cuarentena": return .red
-        default: return .gray
-        }
-    }
 }
 
 #Preview {
