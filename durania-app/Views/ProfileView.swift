@@ -76,7 +76,7 @@ struct ProfileView: View {
                         .frame(maxWidth: .infinity, minHeight: 52)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .tint(AppColors.errorFg)
                     .padding(.top, 10)
                     
                 }

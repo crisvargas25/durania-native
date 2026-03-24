@@ -6,17 +6,24 @@ import UIKit
 // MARK: - Vista Principal AR
 
 struct ARScanView: View {
-    
+
     @Environment(\.dismiss) var dismiss
-    
+    let onBovineTap: (String) -> Void
+    let bovineInfo: ((String) -> (status: String, ranch: String)?)?
+
+    init(
+        onBovineTap: @escaping (String) -> Void = { _ in },
+        bovineInfo: ((String) -> (status: String, ranch: String)?)? = nil
+    ) {
+        self.onBovineTap = onBovineTap
+        self.bovineInfo = bovineInfo
+    }
+
     var body: some View {
         ZStack {
-            
-            // Vista AR
-            ARViewContainer()
+            ARViewContainer(onBovineTap: onBovineTap, bovineInfo: bovineInfo)
                 .edgesIgnoringSafeArea(.all)
-            
-            // Botón flotante volver
+
             VStack {
                 HStack {
                     Button {
@@ -34,10 +41,10 @@ struct ARScanView: View {
                     }
                     .padding(.leading, 16)
                     .padding(.top, 14)
-                    
+
                     Spacer()
                 }
-                
+
                 Spacer()
             }
         }
@@ -47,12 +54,14 @@ struct ARScanView: View {
 // MARK: - Contenedor AR
 
 struct ARViewContainer: UIViewRepresentable {
-    
+    let onBovineTap: (String) -> Void
+    let bovineInfo: ((String) -> (status: String, ranch: String)?)?
+
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero)
-        
+
         let config = ARImageTrackingConfiguration()
-        
+
         guard let referenceImages = ARReferenceImage.referenceImages(
             inGroupNamed: "CodigosGanado",
             bundle: nil
@@ -60,35 +69,71 @@ struct ARViewContainer: UIViewRepresentable {
             print("⚠️ No se encontraron imágenes AR")
             return arView
         }
-        
+
         config.trackingImages = referenceImages
         config.maximumNumberOfTrackedImages = 1
-        
+
         arView.session.delegate = context.coordinator
+        let tapRecognizer = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSceneTap(_:))
+        )
+        arView.addGestureRecognizer(tapRecognizer)
         arView.session.run(config)
-        
+
         context.coordinator.view = arView
         return arView
     }
 
-    func updateUIView(_ uiView: ARView, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func updateUIView(_ uiView: ARView, context: Context) {
+        context.coordinator.onBovineTap = onBovineTap
+        context.coordinator.bovineInfo = bovineInfo
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onBovineTap: onBovineTap, bovineInfo: bovineInfo)
+    }
 
     // MARK: - Coordinator
-    
+
     @MainActor
     class Coordinator: NSObject, ARSessionDelegate {
         weak var view: ARView?
+        var onBovineTap: (String) -> Void
+        var bovineInfo: ((String) -> (status: String, ranch: String)?)?
         private var posterEntitiesByAnchorID: [UUID: ModelEntity] = [:]
         private var anchorEntitiesByID: [UUID: AnchorEntity] = [:]
+        private var bovineIDByEntityID: [UInt64: String] = [:]
         private let visualConfig = PosterVisualConfig()
+
+        init(
+            onBovineTap: @escaping (String) -> Void,
+            bovineInfo: ((String) -> (status: String, ranch: String)?)?
+        ) {
+            self.onBovineTap = onBovineTap
+            self.bovineInfo = bovineInfo
+            super.init()
+        }
 
         private struct PosterVisualConfig {
             let width: Float = 0.22
             let height: Float = 0.12
             let cornerRadius: Float = 0.012
             let yOffset: Float = 0.10
+        }
+
+        @objc
+        func handleSceneTap(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended,
+                  let arView = view else { return }
+
+            let point = recognizer.location(in: arView)
+            guard let hitEntity = arView.hitTest(point, query: .nearest).first?.entity,
+                  let bovineID = resolveBovineID(from: hitEntity) else {
+                return
+            }
+
+            onBovineTap(bovineID)
         }
 
         func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
@@ -115,7 +160,9 @@ struct ARViewContainer: UIViewRepresentable {
         func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
             for anchor in anchors {
                 let anchorID = anchor.identifier
-                posterEntitiesByAnchorID.removeValue(forKey: anchorID)
+                if let poster = posterEntitiesByAnchorID.removeValue(forKey: anchorID) {
+                    bovineIDByEntityID.removeValue(forKey: poster.id)
+                }
 
                 if let anchorEntity = anchorEntitiesByID.removeValue(forKey: anchorID) {
                     view?.scene.removeAnchor(anchorEntity)
@@ -130,15 +177,17 @@ struct ARViewContainer: UIViewRepresentable {
 
             let anchorEntity = AnchorEntity(anchor: imageAnchor)
             let bovineID = imageAnchor.referenceImage.name ?? "MX-00000"
-            let status = "ACTIVO"
-            let action = "Acción: Monitoreo normal"
+
+            let info = bovineInfo?(bovineID)
+            let status = info?.status ?? "ACTIVO"
+            let action = info.map { "Rancho: \($0.ranch)" } ?? "Acción: Monitoreo normal"
 
             let posterEntity = makePosterEntity(
                 bovineID: bovineID,
                 status: status,
                 action: action
             )
-            // Inicialmente en el origen del anchor; el offset real se aplica en mundo en updateBillboard.
+            posterEntity.generateCollisionShapes(recursive: true)
             posterEntity.position = .zero
 
             anchorEntity.addChild(posterEntity)
@@ -146,6 +195,7 @@ struct ARViewContainer: UIViewRepresentable {
 
             posterEntitiesByAnchorID[anchorID] = posterEntity
             anchorEntitiesByID[anchorID] = anchorEntity
+            bovineIDByEntityID[posterEntity.id] = bovineID
         }
 
         private func makePosterEntity(bovineID: String, status: String, action: String) -> ModelEntity {
@@ -160,9 +210,8 @@ struct ARViewContainer: UIViewRepresentable {
                 return ModelEntity(mesh: mesh, materials: [material])
             }
 
-            // Fallback seguro: panel simple + texto mínimo para no romper experiencia
             let fallbackMaterial = SimpleMaterial(
-                color: UIColor(red: 0.1, green: 0.2, blue: 0.18, alpha: 0.9),
+                color: UIColor(red: 0.015, green: 0.18, blue: 0.20, alpha: 0.9),
                 isMetallic: false
             )
             let fallbackPanel = ModelEntity(mesh: mesh, materials: [fallbackMaterial])
@@ -189,21 +238,32 @@ struct ARViewContainer: UIViewRepresentable {
                 let cg = context.cgContext
                 let rect = CGRect(origin: .zero, size: size)
 
-                // Fondo base oscuro translúcido
                 let bgPath = UIBezierPath(roundedRect: rect, cornerRadius: 44)
-                UIColor(red: 0.08, green: 0.17, blue: 0.14, alpha: 0.92).setFill()
+                UIColor(red: 0.015, green: 0.18, blue: 0.20, alpha: 0.92).setFill()
                 bgPath.fill()
 
-                // Borde claro para mejorar contraste en AR
                 UIColor(white: 1.0, alpha: 0.28).setStroke()
                 bgPath.lineWidth = 6
                 bgPath.stroke()
 
-                // Icono ilustrado
-                if let icon = UIImage(systemName: "checkmark.seal.fill")?.withTintColor(
-                    UIColor(red: 0.51, green: 0.89, blue: 0.57, alpha: 1),
-                    renderingMode: .alwaysOriginal
-                ) {
+                let iconName: String
+                let iconColor: UIColor
+                switch status.uppercased() {
+                case "SANO":
+                    iconName = "checkmark.seal.fill"
+                    iconColor = UIColor(red: 0.306, green: 0.769, blue: 0.627, alpha: 1)
+                case "OBSERVACIÓN", "OBSERVACION":
+                    iconName = "eye.fill"
+                    iconColor = UIColor(red: 0.910, green: 0.455, blue: 0.106, alpha: 1)
+                case "CUARENTENA":
+                    iconName = "exclamationmark.triangle.fill"
+                    iconColor = UIColor(red: 0.820, green: 0.263, blue: 0.267, alpha: 1)
+                default:
+                    iconName = "checkmark.seal.fill"
+                    iconColor = UIColor(red: 0.306, green: 0.769, blue: 0.627, alpha: 1)
+                }
+
+                if let icon = UIImage(systemName: iconName)?.withTintColor(iconColor, renderingMode: .alwaysOriginal) {
                     icon.draw(in: CGRect(x: 38, y: 34, width: 68, height: 68))
                 }
 
@@ -228,12 +288,19 @@ struct ARViewContainer: UIViewRepresentable {
                 NSString(string: id)
                     .draw(in: CGRect(x: 40, y: 118, width: 920, height: 110), withAttributes: mainAttrs)
 
-                // Badge de estado
-                let badgeRect = CGRect(x: 40, y: 252, width: 220, height: 84)
+                let badgeRect = CGRect(x: 40, y: 252, width: 300, height: 84)
                 let badgePath = UIBezierPath(roundedRect: badgeRect, cornerRadius: 22)
-                let statusColor: UIColor = status.uppercased() == "ACTIVO"
-                    ? UIColor(red: 0.28, green: 0.72, blue: 0.35, alpha: 0.95)
-                    : UIColor(red: 0.86, green: 0.58, blue: 0.24, alpha: 0.95)
+                let statusColor: UIColor
+                switch status.uppercased() {
+                case "SANO":
+                    statusColor = UIColor(red: 0.306, green: 0.769, blue: 0.627, alpha: 0.95)
+                case "OBSERVACIÓN", "OBSERVACION":
+                    statusColor = UIColor(red: 0.910, green: 0.455, blue: 0.106, alpha: 0.95)
+                case "CUARENTENA":
+                    statusColor = UIColor(red: 0.820, green: 0.263, blue: 0.267, alpha: 0.95)
+                default:
+                    statusColor = UIColor(red: 0.306, green: 0.769, blue: 0.627, alpha: 0.95)
+                }
                 statusColor.setFill()
                 badgePath.fill()
 
@@ -242,12 +309,11 @@ struct ARViewContainer: UIViewRepresentable {
                     .foregroundColor: UIColor.white
                 ]
                 NSString(string: status.uppercased())
-                    .draw(in: CGRect(x: 78, y: 274, width: 170, height: 42), withAttributes: badgeAttrs)
+                    .draw(in: CGRect(x: 60, y: 274, width: 270, height: 42), withAttributes: badgeAttrs)
 
                 NSString(string: action)
                     .draw(in: CGRect(x: 40, y: 370, width: 940, height: 70), withAttributes: subAttrs)
 
-                // Sombra suave inferior para separar del entorno
                 cg.saveGState()
                 cg.setShadow(offset: CGSize(width: 0, height: 12), blur: 20, color: UIColor.black.cgColor)
                 UIColor.clear.setFill()
@@ -286,7 +352,6 @@ struct ARViewContainer: UIViewRepresentable {
             let posterWorld = anchorWorld + SIMD3<Float>(0, visualConfig.yOffset, 0)
             poster.setPosition(posterWorld, relativeTo: nil)
 
-            // Rotación 3D estable apuntando a la cámara (sin giro tipo hélice).
             poster.look(
                 at: cameraWorld,
                 from: posterWorld,
@@ -294,6 +359,19 @@ struct ARViewContainer: UIViewRepresentable {
                 relativeTo: nil,
                 forward: .positiveZ
             )
+        }
+
+        private func resolveBovineID(from entity: Entity) -> String? {
+            var current: Entity? = entity
+
+            while let node = current {
+                if let bovineID = bovineIDByEntityID[node.id] {
+                    return bovineID
+                }
+                current = node.parent
+            }
+
+            return nil
         }
     }
 }

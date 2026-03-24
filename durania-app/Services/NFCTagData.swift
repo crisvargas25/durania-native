@@ -3,6 +3,7 @@ import Foundation
 enum ScanSource {
     case nfc
     case qr
+    case ar
 }
 
 struct NFCTagData {

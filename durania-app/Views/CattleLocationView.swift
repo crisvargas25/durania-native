@@ -7,11 +7,25 @@ extension CowLocation {
     }
 }
 
-struct CattleLocationView: View {
-    
-    // 🔁 Datos simulados (mock backend)
-    @State private var cows: [CowLocation] = [
+private struct BovineDetailPayload: Identifiable, Hashable {
+    let id = UUID()
+    let bovine: Bovine
+    let vaccines: [Vaccine]
+    let events: [HealthEvent]
+
+    static func == (lhs: BovineDetailPayload, rhs: BovineDetailPayload) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
+private enum LocationMockData {
+    static let cows: [CowLocation] = [
         CowLocation(
+            earTag: "MX-20394",
             name: "Vaca #A12",
             latitude: 24.0285,
             longitude: -104.6541,
@@ -19,6 +33,7 @@ struct CattleLocationView: View {
             lastUpdate: "Hace 10s"
         ),
         CowLocation(
+            earTag: "MX-20395",
             name: "Vaca #B07",
             latitude: 24.0262,
             longitude: -104.6518,
@@ -26,6 +41,7 @@ struct CattleLocationView: View {
             lastUpdate: "Hace 1m"
         ),
         CowLocation(
+            earTag: "MX-20396",
             name: "Toro #C01",
             latitude: 24.0291,
             longitude: -104.6550,
@@ -33,54 +49,220 @@ struct CattleLocationView: View {
             lastUpdate: "Hace 5s"
         )
     ]
+
+    static let detailsByEarTag: [String: BovineDetailPayload] = [
+        "MX-20394": BovineDetailPayload(
+            bovine: Bovine(
+                id: UUID(),
+                earTag: "MX-20394",
+                name: "Luna",
+                age: 2,
+                breed: "Angus",
+                sex: "Hembra",
+                weight: 430,
+                healthStatus: .healthy,
+                lastVaccine: Date().addingTimeInterval(-86400 * 20),
+                ranch: "Rancho El Roble"
+            ),
+            vaccines: [
+                Vaccine(
+                    id: UUID(),
+                    name: "Brucelosis",
+                    dose: "1ra",
+                    date: Date().addingTimeInterval(-86400 * 30),
+                    batch: "BRX-22",
+                    nextDose: Date().addingTimeInterval(86400 * 180)
+                )
+            ],
+            events: [
+                HealthEvent(
+                    id: UUID(),
+                    title: "Revisión médica",
+                    description: "Se mantiene estable y activa.",
+                    date: Date().addingTimeInterval(-86400 * 7)
+                )
+            ]
+        ),
+        "MX-20395": BovineDetailPayload(
+            bovine: Bovine(
+                id: UUID(),
+                earTag: "MX-20395",
+                name: "Niebla",
+                age: 1,
+                breed: "Brahman",
+                sex: "Hembra",
+                weight: 390,
+                healthStatus: .observation,
+                lastVaccine: Date().addingTimeInterval(-86400 * 38),
+                ranch: "Rancho El Roble"
+            ),
+            vaccines: [
+                Vaccine(
+                    id: UUID(),
+                    name: "Tuberculosis",
+                    dose: "Refuerzo",
+                    date: Date().addingTimeInterval(-86400 * 90),
+                    batch: "TBC-10",
+                    nextDose: nil
+                )
+            ],
+            events: [
+                HealthEvent(
+                    id: UUID(),
+                    title: "Observación de movilidad",
+                    description: "Actividad reducida en la última hora.",
+                    date: Date().addingTimeInterval(-3600)
+                )
+            ]
+        ),
+        "MX-20396": BovineDetailPayload(
+            bovine: Bovine(
+                id: UUID(),
+                earTag: "MX-20396",
+                name: "Rayo",
+                age: 3,
+                breed: "Charolais",
+                sex: "Macho",
+                weight: 470,
+                healthStatus: .healthy,
+                lastVaccine: Date().addingTimeInterval(-86400 * 45),
+                ranch: "Rancho El Roble"
+            ),
+            vaccines: [
+                Vaccine(
+                    id: UUID(),
+                    name: "Clostridiosis",
+                    dose: "Refuerzo",
+                    date: Date().addingTimeInterval(-86400 * 60),
+                    batch: "CLT-42",
+                    nextDose: Date().addingTimeInterval(86400 * 120)
+                )
+            ],
+            events: [
+                HealthEvent(
+                    id: UUID(),
+                    title: "Movimiento alto",
+                    description: "Rango de desplazamiento superior al promedio.",
+                    date: Date().addingTimeInterval(-300)
+                )
+            ]
+        )
+    ]
+}
+
+struct CattleLocationView: View {
+    private let cows = LocationMockData.cows
+
+    // Inicializado con la primera vaca para evitar un onAppear que dispare onChange en cascada
+    @State private var selectedCowID: CowLocation.ID? = LocationMockData.cows.first?.id
+    @State private var selectedBovineDetail: BovineDetailPayload?
+    // El mapa se renderiza solo despues del primer layout para evitar que Metal
+    // se inicialice con frame 0x0, lo que bloquea el main thread ~2s
+    @State private var isMapVisible = false
     
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                
-                // Header
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Ubicación del ganado")
-                            .font(.title2)
-                            .bold()
-                            .foregroundColor(AppColors.forestGreen)
-                        
-                        Text("Monitoreo en tiempo real")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "antenna.radiowaves.left.and.right")
+        VStack(spacing: 16) {
+
+            // Header
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Ubicación del ganado")
                         .font(.title2)
-                        .foregroundColor(.green)
+                        .bold()
+                        .foregroundColor(AppColors.forestGreen)
+
+                    Text("Monitoreo en tiempo real")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
                 }
-                .padding(.horizontal)
-                
-                // 🗺 Mapa
-                MapView(cows: cows)
-                    .frame(height: 320)
+
+                Spacer()
+
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.title2)
+                    .foregroundColor(AppColors.successFg)
+            }
+            .padding(.horizontal)
+
+            // Mapa: se monta solo despues del primer layout (frame valido)
+            // para evitar que CAMetalLayer arranque con size 0x0
+            Group {
+                if isMapVisible {
+                    MapView(cows: cows, selectedCowID: $selectedCowID)
+                        .transition(.opacity)
+                } else {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color(.systemGray5))
+                }
+            }
+            .frame(height: 320)
+            .padding(.horizontal)
+            .task {
+                isMapVisible = true
+            }
+
+            // Lista
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Animales activos")
+                    .font(.headline)
                     .padding(.horizontal)
-                
-                // 🐄 Lista
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Animales activos")
-                        .font(.headline)
-                        .padding(.horizontal)
-                    
+
+                ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(spacing: 12) {
+                        LazyVStack(spacing: 12) {
                             ForEach(cows) { cow in
-                                CowCard(cow: cow)
+                                CowCard(
+                                    cow: cow,
+                                    isSelected: selectedCowID == cow.id,
+                                    onTap: {
+                                        selectedCowID = cow.id
+                                    },
+                                    onDetailTap: {
+                                        openDetail(for: cow)
+                                    }
+                                )
+                                .id(cow.id)
                             }
                         }
                         .padding(.horizontal)
                     }
+                    .onChange(of: selectedCowID) { _, newValue in
+                        guard let newValue else { return }
+                        proxy.scrollTo(newValue, anchor: .center)
+                    }
                 }
             }
-            .padding(.top)
         }
+        .padding(.top)
+        .sheet(item: $selectedBovineDetail) { detail in
+            NavigationStack {
+                BovineDetailView(bovine: detail.bovine)
+            }
+        }
+    }
+
+    private func openDetail(for cow: CowLocation) {
+        if let detail = LocationMockData.detailsByEarTag[cow.earTag] {
+            selectedBovineDetail = detail
+            return
+        }
+
+        let fallback = Bovine(
+            id: UUID(),
+            earTag: cow.earTag,
+            name: cow.name,
+            age: 2,
+            breed: "Angus",
+            sex: "Hembra",
+            weight: 410,
+            healthStatus: cow.status == .moving ? .healthy : .observation,
+            lastVaccine: Date(),
+            ranch: "Rancho El Roble"
+        )
+        selectedBovineDetail = BovineDetailPayload(
+            bovine: fallback,
+            vaccines: [],
+            events: []
+        )
     }
 }

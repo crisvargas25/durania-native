@@ -1,49 +1,47 @@
 import SwiftUI
+import SwiftData
 
 struct CattleListView: View {
-    
+
+    @Query(sort: \Bovine.earTag) var bovines: [Bovine]
+    @Environment(\.modelContext) private var modelContext
     @State private var searchText = ""
     @State private var showAddModal = false
-    
-    let cattleList: [Cattle] = [
-        Cattle(tag: "MX-20394", age: "2 años", status: "Sano"),
-        Cattle(tag: "MX-20395", age: "1.5 años", status: "Observación"),
-        Cattle(tag: "MX-20396", age: "3 años", status: "Cuarentena"),
-        Cattle(tag: "MX-20397", age: "1 año", status: "Sano")
-    ]
-    
-    var filteredCattle: [Cattle] {
-        if searchText.isEmpty { return cattleList }
-        return cattleList.filter {
-            $0.tag.localizedCaseInsensitiveContains(searchText)
+    @State private var bovineToDelete: Bovine?
+
+    var filteredBovines: [Bovine] {
+        if searchText.isEmpty { return bovines }
+        return bovines.filter {
+            $0.earTag.localizedCaseInsensitiveContains(searchText) ||
+            ($0.name?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
     }
-    
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 14) {
-                    ForEach(filteredCattle) { cow in
-                        
-                        let bovine = mapToBovine(cow)
-                        
+                    ForEach(filteredBovines) { bovine in
                         NavigationLink {
-                            BovineDetailView(
-                                bovine: bovine,
-                                vaccines: sampleVaccines,
-                                events: sampleEvents
-                            )
+                            BovineDetailView(bovine: bovine)
                         } label: {
-                            cattleCard(cow)
+                            cattleCard(bovine)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                bovineToDelete = bovine
+                            } label: {
+                                Label("Dar de baja", systemImage: "trash")
+                            }
+                        }
                     }
                 }
                 .padding()
             }
             .background(Color.white)
             .navigationTitle("Ganado")
-            .searchable(text: $searchText, prompt: "Buscar arete")
+            .searchable(text: $searchText, prompt: "Buscar arete o nombre")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -58,110 +56,77 @@ struct CattleListView: View {
             .sheet(isPresented: $showAddModal) {
                 AddCattleView()
             }
+            .alert(
+                "Dar de baja \(bovineToDelete?.name ?? bovineToDelete?.earTag ?? "")",
+                isPresented: Binding(
+                    get: { bovineToDelete != nil },
+                    set: { if !$0 { bovineToDelete = nil } }
+                )
+            ) {
+                Button("Cancelar", role: .cancel) { bovineToDelete = nil }
+                Button("Dar de baja", role: .destructive) {
+                    if let b = bovineToDelete {
+                        modelContext.delete(b)
+                        bovineToDelete = nil
+                    }
+                }
+            } message: {
+                Text("Esta acción eliminará permanentemente el registro del bovino. No se puede deshacer.")
+            }
         }
     }
-    
+
     // MARK: - Card
-    
-    func cattleCard(_ cow: Cattle) -> some View {
+
+    func cattleCard(_ bovine: Bovine) -> some View {
         HStack(spacing: 14) {
-            
             Circle()
-                .fill(statusColor(cow.status))
+                .fill(statusColor(bovine.healthStatus))
                 .frame(width: 12, height: 12)
-            
+
             VStack(alignment: .leading, spacing: 4) {
-                Text(cow.tag)
+                Text(bovine.earTag)
                     .font(.headline)
                     .foregroundColor(AppColors.forestGreen)
-                
-                Text("Edad: \(cow.age)")
+
+                if let name = bovine.name {
+                    Text(name)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                Text("\(bovine.age) año\(bovine.age == 1 ? "" : "s") · \(bovine.breed)")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
-            
+
             Spacer()
-            
-            Text(cow.status)
+
+            Text(bovine.healthStatus.rawValue)
                 .font(.caption.bold())
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(statusColor(cow.status).opacity(0.15))
-                .foregroundColor(statusColor(cow.status))
+                .background(statusColor(bovine.healthStatus).opacity(0.15))
+                .foregroundColor(statusColor(bovine.healthStatus))
                 .cornerRadius(12)
         }
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(18)
     }
-    
+
     // MARK: - Helpers
-    
-    func statusColor(_ status: String) -> Color {
+
+    func statusColor(_ status: HealthStatus) -> Color {
         switch status {
-        case "Sano": return AppColors.tealGreen
-        case "Observación": return .orange
-        case "Cuarentena": return .red
-        default: return .gray
+        case .healthy: return AppColors.tealGreen
+        case .observation: return AppColors.warningFg
+        case .quarantine: return AppColors.errorFg
         }
     }
-    
-    func mapToBovine(_ cow: Cattle) -> Bovine {
-        Bovine(
-            id: UUID(),
-            earTag: cow.tag,
-            name: nil,
-            age: Int(cow.age.prefix(1)) ?? 2,
-            breed: "Angus",
-            sex: "Macho",
-            weight: 420,
-            healthStatus: cow.status == "Sano"
-                ? .healthy
-                : cow.status == "Observación"
-                    ? .observation
-                    : .quarantine,
-            lastVaccine: Date(),
-            ranch: "Rancho El Roble"
-        )
-    }
-    
-    // MARK: - Sample Data
-    
-    let sampleVaccines: [Vaccine] = [
-        Vaccine(
-            id: UUID(),
-            name: "Brucelosis",
-            dose: "1ra",
-            date: Date().addingTimeInterval(-86400 * 30),
-            batch: "BRX-22",
-            nextDose: Date().addingTimeInterval(86400 * 180)
-        ),
-        Vaccine(
-            id: UUID(),
-            name: "Tuberculosis",
-            dose: "Refuerzo",
-            date: Date().addingTimeInterval(-86400 * 90),
-            batch: "TBC-10",
-            nextDose: nil
-        )
-    ]
-    
-    let sampleEvents: [HealthEvent] = [
-        HealthEvent(
-            id: UUID(),
-            title: "Revisión médica",
-            description: "Chequeo general sin anomalías",
-            date: Date().addingTimeInterval(-86400 * 7)
-        ),
-        HealthEvent(
-            id: UUID(),
-            title: "Desparasitación",
-            description: "Tratamiento preventivo",
-            date: Date().addingTimeInterval(-86400 * 60)
-        )
-    ]
 }
 
 #Preview {
     CattleListView()
+        .modelContainer(for: Bovine.self, inMemory: true)
 }

@@ -1,28 +1,51 @@
 import Foundation
+import SwiftData
 
-struct Bovine: Identifiable, Hashable {
-    let id: UUID
-    let earTag: String
-    let name: String?
-    let age: Int
-    let breed: String
-    let sex: String
-    let weight: Double
-    let healthStatus: HealthStatus
-    let lastVaccine: Date?
-    let ranch: String
+@Model
+class Bovine {
+    var id: UUID
+    var earTag: String
+    var name: String?
+    var age: Int
+    var breed: String
+    var sex: String
+    var weight: Double
+    var healthStatus: HealthStatus
+    var lastVaccine: Date?
+    var ranch: String
 
-    // Hashable & Equatable based on stable identity
-    static func == (lhs: Bovine, rhs: Bovine) -> Bool {
-        lhs.id == rhs.id
-    }
+    @Relationship(deleteRule: .cascade)
+    var vaccines: [Vaccine] = []
 
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+    @Relationship(deleteRule: .cascade)
+    var events: [HealthEvent] = []
+
+    init(
+        id: UUID = UUID(),
+        earTag: String,
+        name: String? = nil,
+        age: Int,
+        breed: String,
+        sex: String,
+        weight: Double,
+        healthStatus: HealthStatus = .healthy,
+        lastVaccine: Date? = nil,
+        ranch: String
+    ) {
+        self.id = id
+        self.earTag = earTag
+        self.name = name
+        self.age = age
+        self.breed = breed
+        self.sex = sex
+        self.weight = weight
+        self.healthStatus = healthStatus
+        self.lastVaccine = lastVaccine
+        self.ranch = ranch
     }
 }
 
-enum HealthStatus: String, CaseIterable {
+enum HealthStatus: String, CaseIterable, Codable {
     case healthy = "Sano"
     case observation = "Observación"
     case quarantine = "Cuarentena"
