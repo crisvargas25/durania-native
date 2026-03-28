@@ -32,22 +32,34 @@ struct CowCard: View {
                 Text("Última señal")
                     .font(.caption2)
                     .foregroundColor(.gray)
-                
+
                 Text(cow.lastUpdate)
                     .font(.caption)
                     .bold()
 
-                Button(action: onDetailTap) {
-                    Label("Detalle", systemImage: "chevron.right.circle.fill")
-                        .font(.caption2.weight(.semibold))
-                        .labelStyle(.titleAndIcon)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(AppColors.successBg)
-                        .foregroundColor(AppColors.forestGreen)
-                        .cornerRadius(10)
+                HStack(spacing: 8) {
+                    if let bat = cow.batteryPercent {
+                        Label("\(bat)%", systemImage: batteryIcon(for: bat))
+                            .font(.caption2)
+                            .foregroundColor(bat <= 20 ? .red : .gray)
+                    }
+                    if let temp = cow.temperature {
+                        Label(String(format: "%.1f°", temp), systemImage: "thermometer.medium")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    }
+                    Button(action: onDetailTap) {
+                        Label("Detalle", systemImage: "chevron.right.circle.fill")
+                            .font(.caption2.weight(.semibold))
+                            .labelStyle(.titleAndIcon)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(AppColors.successBg)
+                            .foregroundColor(AppColors.forestGreen)
+                            .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding()
@@ -60,5 +72,15 @@ struct CowCard: View {
         .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         .contentShape(RoundedRectangle(cornerRadius: 14))
         .onTapGesture(perform: onTap)
+    }
+
+    private func batteryIcon(for percent: Int) -> String {
+        switch percent {
+        case 76...: return "battery.100"
+        case 51...: return "battery.75"
+        case 26...: return "battery.50"
+        case 11...: return "battery.25"
+        default:    return "battery.0"
+        }
     }
 }

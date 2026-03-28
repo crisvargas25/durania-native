@@ -30,9 +30,32 @@ No modificar esto hasta tener el Developer Program.
 - `ScanView` — inyecta `modelContext` al ViewModel via `.onAppear`
 - `ARView` (ARScanView) — recibe closure `bovineInfo` que consulta SwiftData para mostrar estado real en el poster AR
 
-### Ubicacion (mock pendiente de backend)
-`CattleLocationView` sigue usando coordenadas fijas hardcodeadas en Durango.
-No modificar hasta tener el backend listo para proveer lat/long reales.
+### Ubicacion — stream en vivo (COLLAR-001 → MX-20395)
+`CattleLocationView` recibe datos reales de GPS para MX-20395 (Niebla) via SSE desde el backend IoT.
+MX-20394 y MX-20396 siguen con coordenadas mock hasta que se les asigne collar.
+
+**Endpoint SSE:**
+```
+GET https://backend-iot-production.up.railway.app/api/collars/{collarId}/realtime/stream?tenantId={tenantId}
+```
+- `tenantId` por defecto de la app: `79e6b3f3-c00e-4e99-a43c-b9192883e7ee`
+- Formato de evento: `data: {"collarId":"...","source":"redis:cow","data":{...}}\n\n`
+- Campos del objeto `data`: `lat`, `lon`, `spd`, `temp`, `activity`, `bat_percent`, `bat_voltage`, `timestamp`, `collar_id`, `animal_id`, `tenant_id`, `rssi`, `snr`
+
+**Servicio:** `CollarStreamService` (`Services/CollarStreamService.swift`)
+- `@Observable @MainActor final class` (patron iOS 17, sin Combine)
+- Publica `liveLocation: CowLocation?` e `isConnected: Bool`
+- Conecta con `URLSession.shared.bytes(for:)`, itera lineas SSE, decodifica `CollarStreamEvent`
+- `CowStatus`: `.moving` si `spd > 0`, `.stopped` si no
+- Reconexion automatica con 3s de espera si el stream se corta
+- `start()` / `stop()` llamados en `.task` / `.onDisappear` de `CattleLocationView`
+
+**Modelos:** `CollarStreamEvent` y `CollarReading` en `Models/CollarReading.swift`
+
+**Mapa de collares activos:**
+| Collar | Arete | Nombre |
+|--------|-------|--------|
+| COLLAR-001 | MX-20395 | Niebla |
 
 ### Archivos template de Xcode eliminados
 - `ContentView.swift` — eliminado
@@ -48,13 +71,14 @@ Esqueleto UI sin datos reales. Pendiente de implementar.
 2. `CattleListView` → `BovineDetailView` — lista con busqueda, detalle y edicion
 3. `ScanView` — NFC (simulado) / QR (real con AVFoundation) / AR (real con ARKit)
 4. `ReportsView` — esqueleto UI, sin datos
-5. `CattleLocationView` — mapa MapKit + lista con coordenadas mock
+5. `CattleLocationView` — mapa MapKit + lista; MX-20395 con GPS en vivo via `CollarStreamService`, resto mock
 
 ## Modelos clave
 - `Bovine` — `@Model class`: earTag, name, breed, sex, weight, healthStatus, lastVaccine, ranch, vaccines, events
 - `Vaccine` — `@Model class`: name, dose, date, batch, nextDose, bovine (inversa)
 - `HealthEvent` — `@Model class`: title, details (prop), date, bovine (inversa). Init acepta `description:` como label para compatibilidad
-- `CowLocation` — struct para el mapa: lat/lon + estado de movimiento
+- `CowLocation` — struct para el mapa: lat/lon, estado de movimiento, `batteryPercent: Int?`, `temperature: Double?` (opcionales, solo presentes cuando hay collar en vivo)
+- `CollarStreamEvent` / `CollarReading` — modelos `Decodable` para el JSON del stream SSE del backend IoT
 - `Ranch`, `Producer` — definidos pero sin uso en vistas todavia
 
 ### Relaciones SwiftData

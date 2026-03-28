@@ -151,7 +151,7 @@ private enum LocationMockData {
 }
 
 struct CattleLocationView: View {
-    private let cows = LocationMockData.cows
+    @State private var collarService = CollarStreamService()
 
     // Inicializado con la primera vaca para evitar un onAppear que dispare onChange en cascada
     @State private var selectedCowID: CowLocation.ID? = LocationMockData.cows.first?.id
@@ -159,7 +159,17 @@ struct CattleLocationView: View {
     // El mapa se renderiza solo despues del primer layout para evitar que Metal
     // se inicialice con frame 0x0, lo que bloquea el main thread ~2s
     @State private var isMapVisible = false
-    
+
+    /// Mock base + reemplazo en vivo para MX-20395 cuando hay datos del collar
+    private var liveCows: [CowLocation] {
+        LocationMockData.cows.map { cow in
+            if cow.earTag == "MX-20395", let live = collarService.liveLocation {
+                return live
+            }
+            return cow
+        }
+    }
+
     var body: some View {
         VStack(spacing: 16) {
 
@@ -180,7 +190,7 @@ struct CattleLocationView: View {
 
                 Image(systemName: "antenna.radiowaves.left.and.right")
                     .font(.title2)
-                    .foregroundColor(AppColors.successFg)
+                    .foregroundColor(collarService.isConnected ? AppColors.successFg : .gray)
             }
             .padding(.horizontal)
 
@@ -188,7 +198,7 @@ struct CattleLocationView: View {
             // para evitar que CAMetalLayer arranque con size 0x0
             Group {
                 if isMapVisible {
-                    MapView(cows: cows, selectedCowID: $selectedCowID)
+                    MapView(cows: liveCows, selectedCowID: $selectedCowID)
                         .transition(.opacity)
                 } else {
                     RoundedRectangle(cornerRadius: 16)
@@ -199,6 +209,7 @@ struct CattleLocationView: View {
             .padding(.horizontal)
             .task {
                 isMapVisible = true
+                collarService.start()
             }
 
             // Lista
@@ -210,7 +221,7 @@ struct CattleLocationView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 12) {
-                            ForEach(cows) { cow in
+                            ForEach(liveCows) { cow in
                                 CowCard(
                                     cow: cow,
                                     isSelected: selectedCowID == cow.id,
@@ -234,6 +245,9 @@ struct CattleLocationView: View {
             }
         }
         .padding(.top)
+        .onDisappear {
+            collarService.stop()
+        }
         .sheet(item: $selectedBovineDetail) { detail in
             NavigationStack {
                 BovineDetailView(bovine: detail.bovine)

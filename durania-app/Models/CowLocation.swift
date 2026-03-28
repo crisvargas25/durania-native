@@ -9,6 +9,8 @@ struct CowLocation: Identifiable, Hashable {
     let longitude: Double
     let status: CowStatus
     let lastUpdate: String
+    let batteryPercent: Int?
+    let temperature: Double?
 
     init(
         id: UUID = UUID(),
@@ -17,7 +19,9 @@ struct CowLocation: Identifiable, Hashable {
         latitude: Double,
         longitude: Double,
         status: CowStatus,
-        lastUpdate: String
+        lastUpdate: String,
+        batteryPercent: Int? = nil,
+        temperature: Double? = nil
     ) {
         self.id = id
         self.earTag = earTag
@@ -26,6 +30,8 @@ struct CowLocation: Identifiable, Hashable {
         self.longitude = longitude
         self.status = status
         self.lastUpdate = lastUpdate
+        self.batteryPercent = batteryPercent
+        self.temperature = temperature
     }
 }
 
